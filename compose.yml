@@ -1,0 +1,207 @@
+version: '3.8'
+
+networks:
+  microservice_network:
+    driver: overlay # در حالت Swarm این به overlay تغییر می‌کنه
+
+volumes:
+  order_db_data:
+  inventory_db_data:
+  redis_data:
+
+services:
+  # ==========================================
+  # Infrastructure Services (Infrastructure)
+  # ==========================================
+  redis:
+    image: redis:8-alpine
+    container_name: app_redis
+    volumes:
+      - redis_data:/data
+    networks:
+      - microservice_network
+    # پورتی به بیرون مپ نشده تا امنیت رادیس حفظ بشه
+
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  order_db:
+    image: postgres:15-alpine
+    container_name: order_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: safe_secure_password_123
+      POSTGRES_DB: order_db
+    volumes:
+      - order_db_data:/var/lib/postgresql/data
+    networks:
+      - microservice_network
+
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  inventory_db:
+    image: postgres:15-alpine
+    container_name: inventory_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: safe_secure_password_123
+      POSTGRES_DB: inventory_db
+    volumes:
+      - inventory_db_data:/var/lib/postgresql/data
+    networks:
+      - microservice_network
+
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  # ==========================================
+  # Node.js Microservices (NestJS)
+  # ==========================================
+  api-gateway:
+    image: cloud-computing-project-api-gateway:latest
+
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        APP_NAME: api-gateway
+    container_name: api_gateway_app
+    ports:
+      - '3000:3000' # تنها پورتی که باز است
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - redis
+    networks:
+      - microservice_network
+
+    deploy:
+      replicas: 3 # سه تا کپی از گیت‌وی بالا میاره برای لود بالانسینگ
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+      restart_policy:
+        condition: on-failure
+
+  auth-service:
+    image: cloud-computing-project-auth-service:latest
+
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        APP_NAME: auth-service
+    container_name: auth_service_app
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - redis
+    networks:
+      - microservice_network
+
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  order-service:
+    image: cloud-computing-project-order-service:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        APP_NAME: order-service
+    container_name: order_service_app
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DB_HOST=order_db
+      - DB_PORT=5432
+      - DB_USERNAME=postgres
+      - DB_PASSWORD=safe_secure_password_123
+      - DB_DATABASE=order_db
+    depends_on:
+      - redis
+      - order_db
+    networks:
+      - microservice_network
+
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  inventory-service:
+    image: cloud-computing-project-inventory-service:latest
+
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        APP_NAME: inventory-service
+    container_name: inventory_service_app
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DB_HOST=inventory_db
+      - DB_PORT=5432
+      - DB_USERNAME=postgres
+      - DB_PASSWORD=safe_secure_password_123
+      - DB_DATABASE=inventory_db
+    depends_on:
+      - redis
+      - inventory_db
+    networks:
+      - microservice_network
+
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  # ==========================================
+  # Python Microservice
+  # ==========================================
+  notification-service:
+    image: cloud-computing-project-notification-service:latest
+
+    build:
+      context: ./notification-service
+      dockerfile: Dockerfile
+    container_name: notification_service_app
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - redis
+    networks:
+      - microservice_network
+
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
