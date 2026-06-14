@@ -1,4 +1,4 @@
-version: '3.8'
+# version: '3.8'
 
 networks:
   microservice_network:
@@ -8,6 +8,7 @@ volumes:
   order_db_data:
   inventory_db_data:
   redis_data:
+  transport_db_data:
 
 services:
   # ==========================================
@@ -15,7 +16,7 @@ services:
   # ==========================================
   redis:
     image: redis:8-alpine
-    container_name: app_redis
+    # container_name: app_redis
     volumes:
       - redis_data:/data
     networks:
@@ -31,7 +32,7 @@ services:
 
   order_db:
     image: postgres:15-alpine
-    container_name: order_postgres
+    # container_name: order_postgres
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: safe_secure_password_123
@@ -50,13 +51,32 @@ services:
 
   inventory_db:
     image: postgres:15-alpine
-    container_name: inventory_postgres
+    # container_name: inventory_postgres
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: safe_secure_password_123
       POSTGRES_DB: inventory_db
     volumes:
       - inventory_db_data:/var/lib/postgresql/data
+    networks:
+      - microservice_network
+
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  transport_db:
+    image: postgres:15-alpine
+    # container_name: transport_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: safe_secure_password_123
+      POSTGRES_DB: transport_db
+    volumes:
+      - transport_db_data:/var/lib/postgresql/data
     networks:
       - microservice_network
 
@@ -78,9 +98,9 @@ services:
       dockerfile: Dockerfile
       args:
         APP_NAME: api-gateway
-    container_name: api_gateway_app
+    # container_name: api_gateway_app
     ports:
-      - '3000:3000' # تنها پورتی که باز است
+      - '8080:3000' # تنها پورتی که باز است
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -106,7 +126,7 @@ services:
       dockerfile: Dockerfile
       args:
         APP_NAME: auth-service
-    container_name: auth_service_app
+    # container_name: auth_service_app
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -129,7 +149,7 @@ services:
       dockerfile: Dockerfile
       args:
         APP_NAME: order-service
-    container_name: order_service_app
+    # container_name: order_service_app
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -159,7 +179,7 @@ services:
       dockerfile: Dockerfile
       args:
         APP_NAME: inventory-service
-    container_name: inventory_service_app
+    # container_name: inventory_service_app
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -190,12 +210,42 @@ services:
     build:
       context: ./notification-service
       dockerfile: Dockerfile
-    container_name: notification_service_app
+    # container_name: notification_service_app
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
     depends_on:
       - redis
+    networks:
+      - microservice_network
+
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  transport-service:
+    image: cloud-computing-project-transport:latest
+
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        APP_NAME: transport
+    # container_name: transport_service_app
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DB_HOST=transport_db # اتصال به دیتابیس جدید
+      - DB_PORT=5432
+      - DB_USERNAME=postgres
+      - DB_PASSWORD=safe_secure_password_123
+      - DB_DATABASE=transport_db
+    depends_on:
+      - redis
+      - transport_db
     networks:
       - microservice_network
 
